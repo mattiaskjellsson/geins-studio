@@ -176,6 +176,15 @@ const searchableFields: Array<keyof EntityList> = ['_id', 'name', 'vatNumber'];
   />
   <ContentHeader :title="$t(entityName, 2)">
     <ContentActionBar>
+      <Button
+        variant="outline"
+        as-child
+      >
+        <NuxtLink to="/customers/company/import">
+          <LucideUpload class="mr-2 size-4" />
+          {{ $t('customers.import_companies') }}
+        </NuxtLink>
+      </Button>
       <ButtonIcon icon="new" :href="newEntityUrl">
         {{ $t('new_entity', { entityName }) }}
       </ButtonIcon>
