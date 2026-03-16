@@ -225,6 +225,44 @@ function trimChars(value: string): string {
   return value.replace(/^[\s.,]+|[\s.,]+$/g, '');
 }
 
+/**
+ * Common country names/codes → ISO 3166-1 alpha-2.
+ * Only includes values likely to appear in Nordic B2B CSV exports.
+ */
+const COUNTRY_TO_ISO: Record<string, string> = {
+  sweden: 'SE', sverige: 'SE', swe: 'SE',
+  norway: 'NO', norge: 'NO', nor: 'NO',
+  denmark: 'DK', danmark: 'DK', dnk: 'DK',
+  finland: 'FI', fin: 'FI',
+  iceland: 'IS', island: 'IS', isl: 'IS',
+  germany: 'DE', deutschland: 'DE', deu: 'DE',
+  'united kingdom': 'GB', uk: 'GB', gbr: 'GB',
+  'united states': 'US', usa: 'US',
+  france: 'FR', fra: 'FR',
+  netherlands: 'NL', holland: 'NL', nld: 'NL',
+  spain: 'ES', españa: 'ES', esp: 'ES',
+  italy: 'IT', italia: 'IT', ita: 'IT',
+  poland: 'PL', polska: 'PL', pol: 'PL',
+  austria: 'AT', österreich: 'AT', aut: 'AT',
+  switzerland: 'CH', schweiz: 'CH', che: 'CH',
+  belgium: 'BE', belgien: 'BE', bel: 'BE',
+  portugal: 'PT', prt: 'PT',
+  ireland: 'IE', irl: 'IE',
+  estonia: 'EE', estland: 'EE', est: 'EE',
+  latvia: 'LV', lettland: 'LV', lva: 'LV',
+  lithuania: 'LT', litauen: 'LT', ltu: 'LT',
+};
+
+/** Normalize a country value to ISO 3166-1 alpha-2, or return as-is if already valid. */
+function normalizeCountry(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+  // Already a 2-letter code
+  if (/^[A-Z]{2}$/i.test(trimmed)) return trimmed.toUpperCase();
+  const lookup = COUNTRY_TO_ISO[trimmed.toLowerCase()];
+  return lookup || trimmed;
+}
+
 function splitName(fullNameStr: string): { firstName: string; lastName: string } {
   const parts = fullNameStr.trim().split(/\s+/);
   if (parts.length <= 1) {
@@ -291,6 +329,11 @@ function buildAddress(
     company: company || undefined,
     email: email || undefined,
   };
+
+  // Normalize country to ISO 3166-1 alpha-2
+  if (address.country) {
+    address.country = normalizeCountry(address.country);
+  }
 
   if (addressType) {
     address.addressType = addressType;
@@ -573,15 +616,8 @@ export function useCompanyImport(): UseCompanyImportReturnType {
         }
       } catch (err: unknown) {
         row.status = 'error';
-        const apiErr = err as { message?: string; status?: number; originalError?: unknown };
-        let errorMsg = apiErr.message || String(err);
-        if (apiErr.status === 422 && apiErr.originalError) {
-          const detail = typeof apiErr.originalError === 'string'
-            ? apiErr.originalError
-            : JSON.stringify(apiErr.originalError);
-          errorMsg = `${errorMsg} — ${detail}`;
-        }
-        row.errorMessage = errorMsg;
+        const apiErr = err as { message?: string; data?: { title?: string } };
+        row.errorMessage = apiErr.data?.title || apiErr.message || String(err);
         importProgress.value.errors++;
         geinsLogError(`Failed to import "${row.companyName}"`, err);
       }
