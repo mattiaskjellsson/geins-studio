@@ -90,11 +90,14 @@ function splitCsvLines(raw: string): string[] {
 
 /**
  * Detect the delimiter used in a CSV header line.
- * Checks for semicolons, tabs, and pipes before defaulting to comma.
+ * Counts occurrences of each candidate delimiter outside quoted sections
+ * and picks the most frequent one, defaulting to comma.
  */
 function detectDelimiter(headerLine: string): string {
-  // Count candidate delimiters outside quoted sections
-  const candidates = [';', '\t', '|'];
+  const candidates = [',', ';', '\t', '|'];
+  let bestDelimiter = ',';
+  let bestCount = 0;
+
   for (const d of candidates) {
     let count = 0;
     let inQuotes = false;
@@ -102,9 +105,13 @@ function detectDelimiter(headerLine: string): string {
       if (char === '"') inQuotes = !inQuotes;
       else if (char === d && !inQuotes) count++;
     }
-    if (count > 0) return d;
+    if (count > bestCount) {
+      bestCount = count;
+      bestDelimiter = d;
+    }
   }
-  return ',';
+
+  return bestDelimiter;
 }
 
 function parseCsvLine(line: string, delimiter = ','): string[] {
