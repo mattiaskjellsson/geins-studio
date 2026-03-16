@@ -17,16 +17,17 @@ const {
   importConfig,
   importProgress,
   importing,
+  parseErrors,
   parseFile,
   runImport,
   goToStep,
   reset,
   getMappedValue,
+  getColumnExamples,
 } = useCompanyImport();
 
 // Data for configuration dropdowns
-const { globalApi, productApi } = useGeinsRepository();
-const { useGeinsFetch } = useGeinsApi();
+const { globalApi, productApi, userApi } = useGeinsRepository();
 const channels = ref<Channel[]>([]);
 const priceLists = ref<ProductPriceList[]>([]);
 const users = ref<User[]>([]);
@@ -71,13 +72,11 @@ onMounted(async () => {
     channels.value = channelData;
     priceLists.value = priceListData;
 
-    const usersResult = await useGeinsFetch<User[]>('/user/list');
-    if (!usersResult.error.value && usersResult.data.value) {
-      users.value = (usersResult.data.value as User[]).map((user: User) => ({
-        ...user,
-        name: fullName(user),
-      }));
-    }
+    const usersResult = await userApi.list();
+    users.value = usersResult.map((user: User) => ({
+      ...user,
+      name: fullName(user),
+    }));
   } catch (err) {
     geinsLogError('Failed to load configuration data', err);
   } finally {
@@ -290,6 +289,17 @@ const progressPercent = computed(() => {
         </p>
       </div>
 
+      <!-- Parse errors -->
+      <Alert v-if="parseErrors.length > 0" variant="destructive" class="mt-6">
+        <LucideCircleAlert class="size-4" />
+        <AlertTitle>{{ t('customers.import_parse_error_title') }}</AlertTitle>
+        <AlertDescription>
+          <ul class="mt-1 list-inside list-disc text-sm">
+            <li v-for="err in parseErrors" :key="err">{{ t(`customers.import_parse_error_${err}`) }}</li>
+          </ul>
+        </AlertDescription>
+      </Alert>
+
       <!-- File info after upload -->
       <div v-if="csvRows.length > 0" class="mt-6">
         <div
@@ -327,6 +337,8 @@ const progressPercent = computed(() => {
     :channels="channels"
     :price-lists="priceLists"
     :can-proceed="canProceed"
+    :column-examples="getColumnExamples()"
+    :loading="loadingConfig"
     @next="nextStep"
     @prev="prevStep"
   />

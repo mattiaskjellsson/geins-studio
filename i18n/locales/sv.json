@@ -416,7 +416,12 @@
     "import_auto_detected": "{count} av {total} fält automatiskt identifierade",
     "import_not_mapped": "Ej kopplad",
     "import_error_missing_name": "Företagsnamn saknas",
-    "import_error_no_channel": "Ingen kanal vald"
+    "import_error_no_channel": "Ingen kanal vald",
+    "import_parse_error_title": "Kunde inte läsa CSV-filen",
+    "import_parse_error_empty_file": "Filen är tom",
+    "import_parse_error_no_header": "Ingen rubrikrad hittades",
+    "import_parse_error_single_column": "Bara en kolumn hittades — filen kan använda ett format eller avgränsare som inte stöds",
+    "import_parse_error_no_data_rows": "Filen innehåller bara en rubrikrad utan data"
   },
   "pricing": {
     "price_list_channel": "Kanal",

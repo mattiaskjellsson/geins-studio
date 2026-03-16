@@ -417,7 +417,12 @@
     "import_auto_detected": "{count} of {total} fields auto-detected",
     "import_not_mapped": "Not mapped",
     "import_error_missing_name": "Missing company name",
-    "import_error_no_channel": "No channel selected"
+    "import_error_no_channel": "No channel selected",
+    "import_parse_error_title": "Could not read CSV file",
+    "import_parse_error_empty_file": "The file is empty",
+    "import_parse_error_no_header": "No header row found",
+    "import_parse_error_single_column": "Only one column detected — the file may use an unsupported delimiter or format",
+    "import_parse_error_no_data_rows": "The file only contains a header row with no data"
   },
   "pricing": {
     "price_list_channel": "Channel",

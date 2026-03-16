@@ -5,15 +5,18 @@ import {
   FIELD_GROUP_LABELS,
   type FieldGroup,
   type ImportConfig,
+  type ColumnExample,
 } from '@/composables/useCompanyImport';
 
 const importConfig = defineModel<ImportConfig>('importConfig', { required: true });
 
-defineProps<{
+const props = defineProps<{
   csvHeaders: string[];
   channels: Channel[];
   priceLists: ProductPriceList[];
   canProceed: boolean;
+  columnExamples: Record<string, ColumnExample>;
+  loading?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -37,11 +40,33 @@ const fieldGroups = computed(() => {
 const autoDetectedCount = computed(() =>
   Object.values(importConfig.value.fieldMappings).filter(Boolean).length,
 );
+
+const csvHeaderOptions = computed(() =>
+  props.csvHeaders.map((header) => ({
+    value: header,
+    label: header,
+    summary: props.columnExamples[header]?.summary,
+  })),
+);
 </script>
 
 <template>
   <div class="overflow-y-auto">
-    <div class="space-y-6">
+    <!-- Loading skeleton -->
+    <div v-if="loading" class="space-y-6">
+      <Card v-for="i in 3" :key="i" class="p-6">
+        <Skeleton class="mb-4 h-6 w-48" />
+        <Skeleton class="mb-6 h-4 w-80" />
+        <div class="space-y-3">
+          <div v-for="j in (i === 1 ? 6 : 2)" :key="j" class="flex items-center gap-3">
+            <Skeleton class="h-4 w-40 shrink-0" />
+            <Skeleton class="h-9 flex-1" />
+          </div>
+        </div>
+      </Card>
+    </div>
+
+    <div v-else class="space-y-6">
       <!-- Field mapping -->
       <Card class="p-6">
         <h3 class="mb-2 text-lg font-semibold">
@@ -67,19 +92,12 @@ const autoDetectedCount = computed(() =>
                   {{ t(field.labelKey) }}
                   <span v-if="field.required" class="text-destructive">*</span>
                 </Label>
-                <NativeSelect
+                <FormSelectWithHints
                   v-model="importConfig.fieldMappings[field.key]"
+                  :options="csvHeaderOptions"
+                  :placeholder="t('customers.import_not_mapped')"
                   class="flex-1"
-                >
-                  <option value="">{{ t('customers.import_not_mapped') }}</option>
-                  <option
-                    v-for="header in csvHeaders"
-                    :key="header"
-                    :value="header"
-                  >
-                    {{ header }}
-                  </option>
-                </NativeSelect>
+                />
               </div>
             </div>
           </div>
@@ -153,7 +171,7 @@ const autoDetectedCount = computed(() =>
       </Card>
     </div>
 
-    <div class="mt-4 flex justify-between">
+    <div v-if="!loading" class="mt-4 flex justify-between">
       <Button variant="outline" @click="emit('prev')">
         <LucideChevronLeft class="mr-2 size-4" />
         {{ t('back') }}

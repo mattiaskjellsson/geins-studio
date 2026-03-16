@@ -1,0 +1,6 @@
+Id;Email;Firstname;Lastname;Company;Address;Address2;Address3;City;Zip;Country;Phone;Active;PortCode;Mobile;BirthYear;COAddress;Personalnumber;Username;Gender;Newsletter;CountryId;UserType;Extra1;Extra2;Extra3;CustomerGroup;Reason
+;hampus.bergman@erlandsonsbrygga.se;Hampus;Bergman;Erlandsons Brygga Sickla AB;Karlsrogatan 1;;;SOLNA;17065;;08-4449752;1;;;;;5566899174;;0;0;1;2;Fortnox: 31;;;;Duplicate email: hampus.bergman@erlandsonsbrygga.se
+;;Sverker;Skoglund;Ocean Origo Aktiebolag;Lexbyvägen 51;;;PARTILLE;43331;;031-7690790;1;;;;c/o Ocean Origo AB;5565877700;;0;0;1;2;Fortnox: 41;;;;No email found in any field
+;;;;Network Innovations Sweden AB;NORRTULLSGATAN, 6;;;STOCKHOLM;11329;;08-7652670;1;;0707780232;;;5564468436;;0;0;1;2;Fortnox: 55;;;;No email found in any field
+;;Rickard;Larsson;Thermoprodukter B.S. Aktiebolag;Dragonvägen 6;;;KALMAR;39239;;0480-425880;1;;;;;5562281286;;0;0;1;2;Fortnox: 53;;;;No email found in any field
+;;;;FA Consulting A/S;Herlve Ringvej 2C, 1. sal;;;Herlev;2730;Denmark;+4549708077;1;;;;;DK27080049;;0;0;;2;Fortnox: 59;;;;No email found in any field

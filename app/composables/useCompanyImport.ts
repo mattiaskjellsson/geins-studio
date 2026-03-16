@@ -159,6 +159,10 @@ export interface PriceListMapping {
   priceListId: string;
 }
 
+export interface ColumnExample {
+  summary: string;
+}
+
 export interface ImportConfig {
   channelId: string;
   fieldMappings: FieldMappings;
@@ -203,6 +207,7 @@ export interface UseCompanyImportReturnType {
   importConfig: Ref<ImportConfig>;
   importProgress: Ref<{ done: number; total: number; errors: number }>;
   importing: Ref<boolean>;
+  parseErrors: Ref<string[]>;
   parseFile: (file: File) => Promise<void>;
   validateRows: () => void;
   runImport: () => Promise<void>;
@@ -210,6 +215,7 @@ export interface UseCompanyImportReturnType {
   reset: () => void;
   fieldKey: (target: TargetField) => string;
   getMappedValue: (row: ImportRow, target: TargetField) => string;
+  getColumnExamples: () => Record<string, ColumnExample>;
 }
 
 /**
@@ -371,6 +377,7 @@ export function useCompanyImport(): UseCompanyImportReturnType {
   const csvHeaders = ref<string[]>([]);
   const csvRows = ref<CsvRow[]>([]);
   const importRows = ref<ImportRow[]>([]);
+  const parseErrors = ref<string[]>([]);
   const importing = ref(false);
 
   const importConfig = ref<ImportConfig>({
@@ -389,7 +396,15 @@ export function useCompanyImport(): UseCompanyImportReturnType {
 
   async function parseFile(file: File): Promise<void> {
     const text = await file.text();
-    const { headers, rows } = parseCsv(text);
+    const { headers, rows, errors } = parseCsv(text);
+    parseErrors.value = errors;
+
+    if (errors.length > 0) {
+      csvHeaders.value = [];
+      csvRows.value = [];
+      return;
+    }
+
     csvHeaders.value = headers;
 
     // Trim spaces, dots, commas from all imported values
@@ -589,6 +604,7 @@ export function useCompanyImport(): UseCompanyImportReturnType {
     csvHeaders.value = [];
     csvRows.value = [];
     importRows.value = [];
+    parseErrors.value = [];
     importing.value = false;
     importConfig.value = {
       channelId: '',
@@ -610,6 +626,38 @@ export function useCompanyImport(): UseCompanyImportReturnType {
     return getMapped(importRow.data, importConfig.value.fieldMappings, target);
   }
 
+  function getColumnExamples(): Record<string, ColumnExample> {
+    const totalRows = csvRows.value.length;
+    const map: Record<string, ColumnExample> = {};
+
+    for (const header of csvHeaders.value) {
+      const unique = new Set<string>();
+      let filledCount = 0;
+
+      for (const row of csvRows.value) {
+        const val = row[header]?.trim();
+        if (val) {
+          filledCount++;
+          unique.add(val);
+        }
+      }
+
+      if (filledCount === 0) {
+        map[header] = { summary: 'empty column' };
+        continue;
+      }
+
+      const partial = filledCount < totalRows;
+      const coverage = partial ? `${filledCount}/${totalRows} rows` : '';
+
+      map[header] = {
+        summary: [coverage, `${unique.size} unique`].filter(Boolean).join(', '),
+      };
+    }
+
+    return map;
+  }
+
   return {
     currentStep,
     csvHeaders,
@@ -618,6 +666,7 @@ export function useCompanyImport(): UseCompanyImportReturnType {
     importConfig,
     importProgress,
     importing,
+    parseErrors,
     parseFile,
     validateRows,
     runImport,
@@ -625,5 +674,6 @@ export function useCompanyImport(): UseCompanyImportReturnType {
     reset,
     fieldKey,
     getMappedValue,
+    getColumnExamples,
   };
 }
