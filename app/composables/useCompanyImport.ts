@@ -19,7 +19,7 @@ export type TargetField =
   | 'billingAddressLine1' | 'billingAddressLine2' | 'billingZip' | 'billingCity' | 'billingCountry' | 'billingPhone' | 'billingEmail'
   | 'shippingCompany' | 'shippingFirstName' | 'shippingLastName'
   | 'shippingAddressLine1' | 'shippingAddressLine2' | 'shippingZip' | 'shippingCity' | 'shippingCountry' | 'shippingPhone'
-  | 'priceListCode';
+  | 'priceListCode' | 'salesRepName';
 
 export type FieldMappings = Partial<Record<TargetField, string>>;
 
@@ -60,6 +60,7 @@ export const TARGET_FIELD_DEFS: TargetFieldDef[] = [
   { key: 'shippingCountry', labelKey: 'address.country', group: 'shipping' },
   { key: 'shippingPhone', labelKey: 'address.phone', group: 'shipping' },
   { key: 'priceListCode', labelKey: 'price_list', group: 'other' },
+  { key: 'salesRepName', labelKey: 'sales_rep', group: 'other' },
 ];
 
 export const FIELD_GROUP_LABELS: Record<FieldGroup, string> = {
@@ -69,6 +70,37 @@ export const FIELD_GROUP_LABELS: Record<FieldGroup, string> = {
   shipping: 'shipping_address',
   other: 'other',
 };
+
+/**
+ * Name-split pairs: when a full-name field has a value but its
+ * first/last pair fields are empty, auto-split the name.
+ * `addressFields` — only split if the address has meaningful data.
+ */
+const NAME_SPLIT_PAIRS: {
+  source: TargetField;
+  firstName: TargetField;
+  lastName: TargetField;
+  addressFields: TargetField[];
+}[] = [
+  {
+    source: 'buyerName',
+    firstName: 'billingFirstName',
+    lastName: 'billingLastName',
+    addressFields: ['billingAddressLine1', 'billingZip', 'billingCity'],
+  },
+  {
+    source: 'billingFirstName',
+    firstName: 'billingFirstName',
+    lastName: 'billingLastName',
+    addressFields: ['billingAddressLine1', 'billingZip', 'billingCity'],
+  },
+  {
+    source: 'shippingFirstName',
+    firstName: 'shippingFirstName',
+    lastName: 'shippingLastName',
+    addressFields: ['shippingAddressLine1', 'shippingZip', 'shippingCity'],
+  },
+];
 
 // Known CSV column names → target field mappings for auto-detection
 const KNOWN_COLUMN_MAPPINGS: Record<string, TargetField> = {
@@ -97,6 +129,11 @@ const KNOWN_COLUMN_MAPPINGS: Record<string, TargetField> = {
   'delivery_phone': 'shippingPhone',
   'pricelist': 'priceListCode',
   'pricelist_code': 'priceListCode',
+  'our_reference': 'salesRepName',
+  'account_manager': 'salesRepName',
+  'sales_rep': 'salesRepName',
+  'salesperson': 'salesRepName',
+  'säljare': 'salesRepName',
   // Common generic formats
   'company_name': 'companyName',
   'company': 'companyName',
@@ -129,6 +166,18 @@ const KNOWN_COLUMN_MAPPINGS: Record<string, TargetField> = {
   'shipping_phone': 'shippingPhone',
   'price_list': 'priceListCode',
   'price_list_code': 'priceListCode',
+  // Generic first/last name columns (common in CRM/ERP exports)
+  'firstname': 'billingFirstName',
+  'first_name': 'billingFirstName',
+  'lastname': 'billingLastName',
+  'last_name': 'billingLastName',
+  'förnamn': 'billingFirstName',
+  'efternamn': 'billingLastName',
+  'contact_first_name': 'billingFirstName',
+  'contact_last_name': 'billingLastName',
+  'reference': 'buyerName',
+  'buyer_name': 'buyerName',
+  'buyer': 'buyerName',
 };
 
 function autoDetectMappings(headers: string[], rows: CsvRow[]): FieldMappings {
@@ -159,6 +208,11 @@ export interface PriceListMapping {
   priceListId: string;
 }
 
+export interface SalesRepMapping {
+  csvName: string;
+  userId: string;
+}
+
 export interface ColumnExample {
   summary: string;
 }
@@ -167,6 +221,7 @@ export interface ImportConfig {
   channelId: string;
   fieldMappings: FieldMappings;
   priceListMappings: PriceListMapping[];
+  salesRepMappings: SalesRepMapping[];
   skipPrivateIndividuals: boolean;
   duplicateStrategy: 'insert' | 'update' | 'skip';
 }
@@ -216,6 +271,7 @@ export interface UseCompanyImportReturnType {
   fieldKey: (target: TargetField) => string;
   getMappedValue: (row: ImportRow, target: TargetField) => string;
   getColumnExamples: () => Record<string, ColumnExample>;
+  autoMatchSalesReps: (users: { _id: string; firstName?: string; lastName?: string; name?: string }[]) => void;
 }
 
 /**
@@ -261,6 +317,37 @@ function normalizeCountry(value: string): string {
   if (/^[A-Z]{2}$/i.test(trimmed)) return trimmed.toUpperCase();
   const lookup = COUNTRY_TO_ISO[trimmed.toLowerCase()];
   return lookup || trimmed;
+}
+
+/**
+ * EU/EEA VAT number format rules per country.
+ * `prefix`: string inserted between CC and digits (false = none).
+ * `suffix`: string appended after digits (false = none).
+ */
+const VAT_FORMAT: Record<string, { prefix?: string; suffix?: string }> = {
+  SE: { suffix: '01' },
+  NO: { suffix: 'MVA' },
+  AT: { prefix: 'U' },
+  BE: { prefix: '0' },
+  // All other countries: just CC + digits
+};
+
+/**
+ * Convert a raw org number to EU VAT format.
+ * If the value already starts with 2 letters (looks like a VAT number), return as-is.
+ * Strips spaces, dashes, and dots from the numeric part.
+ */
+function normalizeVatNumber(value: string, countryCode: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+  // Already looks like a VAT number (starts with 2+ letters)
+  if (/^[A-Z]{2}/i.test(trimmed)) return trimmed.toUpperCase();
+  // Raw org number — strip non-digits, prepend country code, append suffix
+  const digits = trimmed.replace(/\D/g, '');
+  if (!digits) return trimmed;
+  const cc = countryCode?.toUpperCase() || 'SE';
+  const fmt = VAT_FORMAT[cc] || {};
+  return `${cc}${fmt.prefix || ''}${digits}${fmt.suffix || ''}`;
 }
 
 function splitName(fullNameStr: string): { firstName: string; lastName: string } {
@@ -318,16 +405,16 @@ function buildAddress(
   }
 
   const address: AddressCreate = {
-    firstName: firstName || '-',
+    firstName: firstName || company || '-',
     lastName: lastName || '-',
     addressLine1: line1,
-    addressLine2: line2 || undefined,
+    addressLine2: line2,
     zip,
     city,
     country,
-    phone: phone || undefined,
-    company: company || undefined,
-    email: email || undefined,
+    phone,
+    company,
+    email,
   };
 
   // Normalize country to ISO 3166-1 alpha-2
@@ -372,11 +459,12 @@ function buildCompanyPayload(
   }
 
   const activeValue = get('active');
+  const billingCountry = billingAddr?.country || normalizeCountry(get('billingCountry')) || 'SE';
 
   return {
     name: get('companyName'),
     active: activeValue ? activeValue !== '0' : true,
-    vatNumber: get('vatNumber') || undefined as unknown as string,
+    vatNumber: normalizeVatNumber(get('vatNumber'), billingCountry),
     externalId: get('externalId') || '',
     channels: row.channelIds.length > 0 ? row.channelIds : (config.channelId ? [config.channelId] : []),
     tags: [],
@@ -396,6 +484,18 @@ function getMappedPriceListIds(row: CsvRow, config: ImportConfig): string[] {
     const mapping = config.priceListMappings.find((m) => m.csvCode === priceListCode);
     if (mapping && mapping.priceListId) {
       ids.push(mapping.priceListId);
+    }
+  }
+  return ids;
+}
+
+function getMappedSalesRepIds(row: CsvRow, config: ImportConfig): string[] {
+  const ids: string[] = [];
+  const repName = getMapped(row, config.fieldMappings, 'salesRepName')?.trim();
+  if (repName) {
+    const mapping = config.salesRepMappings.find((m) => m.csvName === repName);
+    if (mapping && mapping.userId) {
+      ids.push(mapping.userId);
     }
   }
   return ids;
@@ -427,6 +527,7 @@ export function useCompanyImport(): UseCompanyImportReturnType {
     channelId: '',
     fieldMappings: {},
     priceListMappings: [],
+    salesRepMappings: [],
     skipPrivateIndividuals: true,
     duplicateStrategy: 'insert',
   });
@@ -476,6 +577,20 @@ export function useCompanyImport(): UseCompanyImportReturnType {
       priceListId: '',
     }));
 
+    // Extract unique sales rep names for mapping
+    const repNames = new Set<string>();
+    const repCol = importConfig.value.fieldMappings.salesRepName;
+    if (repCol) {
+      for (const row of rows) {
+        const name = row[repCol]?.trim();
+        if (name) repNames.add(name);
+      }
+    }
+    importConfig.value.salesRepMappings = Array.from(repNames).map((name) => ({
+      csvName: name,
+      userId: '',
+    }));
+
     const mappedCount = Object.values(importConfig.value.fieldMappings).filter(Boolean).length;
     geinsLog(`Parsed CSV: ${headers.length} columns, ${rows.length} rows, ${mappedCount} fields auto-detected`);
   }
@@ -488,17 +603,8 @@ export function useCompanyImport(): UseCompanyImportReturnType {
       const skipped = isPrivate && importConfig.value.skipPrivateIndividuals;
       const validationErrors = skipped ? [] : validateRow(row, importConfig.value);
 
-      // Pre-populate billing address contact name from buyer name
-      const buyerName = getMapped(row, mappings, 'buyerName');
-      if (buyerName && buyerName.trim()) {
-        const { firstName, lastName } = splitName(buyerName);
-        const fnKey = mappings.billingFirstName || 'billingFirstName';
-        const lnKey = mappings.billingLastName || 'billingLastName';
-        if (!row[fnKey]) row[fnKey] = firstName;
-        if (!row[lnKey]) row[lnKey] = lastName;
-      }
-
       // Build initial buyer from CSV data
+      const buyerName = getMapped(row, mappings, 'buyerName');
       const buyersList: ImportBuyer[] = [];
       if (buyerName && buyerName.trim()) {
         const { firstName, lastName } = splitName(buyerName);
@@ -517,6 +623,33 @@ export function useCompanyImport(): UseCompanyImportReturnType {
         overrides[def.key] = getMapped(row, mappings, def.key);
       }
 
+      // Smart name splitting: if a full-name field has a value but its
+      // first/last pair are empty, auto-split — only when the address has data
+      for (const pair of NAME_SPLIT_PAIRS) {
+        const fullName = overrides[pair.source];
+        if (!fullName?.trim()) continue;
+        if (!overrides[pair.lastName]?.trim()) {
+          const hasAddress = pair.addressFields.some((f) => overrides[f]?.trim());
+          if (hasAddress) {
+            const { firstName, lastName } = splitName(fullName);
+            if (!overrides[pair.firstName]?.trim()) overrides[pair.firstName] = firstName;
+            if (!overrides[pair.lastName]?.trim()) overrides[pair.lastName] = lastName;
+          }
+        }
+      }
+
+      // Clear billing/shipping name fields when no address data exists
+      const billingAddressFields: TargetField[] = ['billingAddressLine1', 'billingZip', 'billingCity'];
+      const shippingAddressFields: TargetField[] = ['shippingAddressLine1', 'shippingZip', 'shippingCity'];
+      if (!billingAddressFields.some((f) => overrides[f]?.trim())) {
+        overrides.billingFirstName = '';
+        overrides.billingLastName = '';
+      }
+      if (!shippingAddressFields.some((f) => overrides[f]?.trim())) {
+        overrides.shippingFirstName = '';
+        overrides.shippingLastName = '';
+      }
+
       return {
         index,
         companyName: getMapped(row, mappings, 'companyName') || `Row ${index + 1}`,
@@ -526,7 +659,7 @@ export function useCompanyImport(): UseCompanyImportReturnType {
         validationErrors,
         skipped,
         selected: !skipped && validationErrors.length === 0,
-        salesRepIds: [],
+        salesRepIds: getMappedSalesRepIds(row, importConfig.value),
         channelIds: importConfig.value.channelId ? [importConfig.value.channelId] : [],
         priceListIds: getMappedPriceListIds(row, importConfig.value),
         exVat: false,
@@ -535,6 +668,44 @@ export function useCompanyImport(): UseCompanyImportReturnType {
         overrides,
       };
     });
+  }
+
+  // Rate limiter: max 1 API call per MIN_INTERVAL_MS
+  const MIN_INTERVAL_MS = 1000;
+  const RETRY_ATTEMPTS = 2;
+  const RETRY_DELAY_MS = 2000;
+  let lastCallTime = 0;
+
+  function delay(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  async function throttle(): Promise<void> {
+    const now = Date.now();
+    const elapsed = now - lastCallTime;
+    if (elapsed < MIN_INTERVAL_MS) {
+      await delay(MIN_INTERVAL_MS - elapsed);
+    }
+    lastCallTime = Date.now();
+  }
+
+  async function withRetry<T>(fn: () => Promise<T>, label: string): Promise<T> {
+    for (let attempt = 0; attempt <= RETRY_ATTEMPTS; attempt++) {
+      try {
+        return await fn();
+      } catch (err: unknown) {
+        const apiErr = err as { type?: string; status?: number };
+        const isRetryable = apiErr.type === 'NETWORK_ERROR' || apiErr.type === 'TIMEOUT_ERROR' || apiErr.status === 500 || apiErr.status === 502 || apiErr.status === 503;
+        if (isRetryable && attempt < RETRY_ATTEMPTS) {
+          const waitMs = RETRY_DELAY_MS * (attempt + 1);
+          geinsLog(`Retry ${attempt + 1}/${RETRY_ATTEMPTS} for "${label}" after ${waitMs}ms`);
+          await delay(waitMs);
+          continue;
+        }
+        throw err;
+      }
+    }
+    throw new Error('Unreachable');
   }
 
   async function runImport(): Promise<void> {
@@ -574,6 +745,7 @@ export function useCompanyImport(): UseCompanyImportReturnType {
         }
 
         if (existingId && importConfig.value.duplicateStrategy === 'update') {
+          await throttle();
           geinsLog(`Updating existing company "${row.companyName}" (${existingId})`, payload);
           const updatePayload: CustomerCompanyUpdate = {
             name: payload.name,
@@ -588,27 +760,58 @@ export function useCompanyImport(): UseCompanyImportReturnType {
             salesReps: payload.salesReps,
             priceLists: payload.priceLists,
           };
-          await customerApi.company.update(existingId, updatePayload);
+          await withRetry(
+            () => customerApi.company.update(existingId, updatePayload),
+            row.companyName,
+          );
           row.status = 'success';
         } else {
+          await throttle();
           geinsLog(`Creating company "${row.companyName}"`, payload);
-          const created = await customerApi.company.create(payload);
+          const created = await withRetry(
+            () => customerApi.company.create(payload),
+            row.companyName,
+          );
 
           // Create buyers as separate API calls
           const buyersToCreate = row.buyers.filter((b) => b.email);
           for (const buyer of buyersToCreate) {
             try {
-              await customerApi.company.id(created._id).buyer.create({
-                _id: buyer.email,
-                firstName: buyer.firstName,
-                lastName: buyer.lastName,
-                email: buyer.email,
-                active: buyer.active,
-                accountId: created._id,
-              });
+              // Check if customer already exists
+              let existingCustomer = false;
+              try {
+                await customerApi.customer.get(buyer.email);
+                existingCustomer = true;
+              } catch {
+                // 404 = doesn't exist, which is expected
+              }
+
+              if (existingCustomer) {
+                // Assign existing customer as buyer
+                await customerApi.company.id(created._id).buyer.assign(buyer.email);
+                // Update buyer details
+                await customerApi.company.id(created._id).buyer.update(buyer.email, {
+                  firstName: buyer.firstName,
+                  lastName: buyer.lastName,
+                  email: buyer.email,
+                  active: buyer.active,
+                });
+              } else {
+                // Create new buyer (creates customer + assigns to company)
+                await customerApi.company.id(created._id).buyer.create({
+                  _id: buyer.email,
+                  firstName: buyer.firstName,
+                  lastName: buyer.lastName,
+                  email: buyer.email,
+                  active: buyer.active,
+                  accountId: created._id,
+                });
+              }
             } catch (buyerErr: unknown) {
+              const buyerApiErr = buyerErr as { data?: { title?: string }; message?: string };
+              const buyerErrMsg = buyerApiErr.data?.title || buyerApiErr.message || String(buyerErr);
               geinsLogError(`Failed to create buyer for "${row.companyName}"`, buyerErr);
-              row.errorMessage = `Company created, but buyer "${buyer.firstName} ${buyer.lastName}" failed`;
+              row.errorMessage = `Company created, but buyer "${buyer.email}" failed: ${buyerErrMsg}`;
             }
           }
 
@@ -616,10 +819,13 @@ export function useCompanyImport(): UseCompanyImportReturnType {
         }
       } catch (err: unknown) {
         row.status = 'error';
-        const apiErr = err as { message?: string; data?: { title?: string } };
-        row.errorMessage = apiErr.data?.title || apiErr.message || String(err);
+        // GeinsApiError has the API response body in .originalError
+        const apiErr = err as { message?: string; status?: number; originalError?: Record<string, unknown> };
+        const errBody = apiErr.originalError;
+        const title = (errBody?.title as string) || '';
+        row.errorMessage = title || apiErr.message || String(err);
         importProgress.value.errors++;
-        geinsLogError(`Failed to import "${row.companyName}"`, err);
+        geinsLogError(`Failed to import "${row.companyName}"`, errBody || apiErr.message || err);
       }
 
       importProgress.value.done++;
@@ -646,6 +852,7 @@ export function useCompanyImport(): UseCompanyImportReturnType {
       channelId: '',
       fieldMappings: {},
       priceListMappings: [],
+      salesRepMappings: [],
       skipPrivateIndividuals: true,
       duplicateStrategy: 'insert',
     };
@@ -694,6 +901,21 @@ export function useCompanyImport(): UseCompanyImportReturnType {
     return map;
   }
 
+  function autoMatchSalesReps(users: { _id: string; firstName?: string; lastName?: string; name?: string }[]): void {
+    if (!importConfig.value.salesRepMappings.length || !users.length) return;
+    for (const mapping of importConfig.value.salesRepMappings) {
+      if (mapping.userId) continue; // already matched
+      const csvNameLower = mapping.csvName.toLowerCase().trim();
+      const match = users.find((u) => {
+        const full = (u.name || `${u.firstName || ''} ${u.lastName || ''}`.trim()).toLowerCase();
+        return full === csvNameLower;
+      });
+      if (match) {
+        mapping.userId = match._id;
+      }
+    }
+  }
+
   return {
     currentStep,
     csvHeaders,
@@ -711,5 +933,6 @@ export function useCompanyImport(): UseCompanyImportReturnType {
     fieldKey,
     getMappedValue,
     getColumnExamples,
+    autoMatchSalesReps,
   };
 }

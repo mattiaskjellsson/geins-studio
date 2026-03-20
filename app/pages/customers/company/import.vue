@@ -24,6 +24,7 @@ const {
   reset,
   getMappedValue,
   getColumnExamples,
+  autoMatchSalesReps,
 } = useCompanyImport();
 
 // Data for configuration dropdowns
@@ -77,6 +78,7 @@ onMounted(async () => {
       ...user,
       name: fullName(user),
     }));
+    autoMatchSalesReps(users.value);
   } catch (err) {
     geinsLogError('Failed to load configuration data', err);
   } finally {
@@ -107,6 +109,7 @@ async function processFile(file: File) {
   }
   fileName.value = file.name;
   await parseFile(file);
+  autoMatchSalesReps(users.value);
 }
 
 function triggerFileInput() {
@@ -336,6 +339,7 @@ const progressPercent = computed(() => {
     :csv-headers="csvHeaders"
     :channels="channels"
     :price-lists="priceLists"
+    :users="users"
     :can-proceed="canProceed"
     :column-examples="getColumnExamples()"
     :loading="loadingConfig"

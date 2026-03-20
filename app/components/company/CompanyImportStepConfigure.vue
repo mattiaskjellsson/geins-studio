@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { Channel, ProductPriceList } from '#shared/types';
+import type { Channel, ProductPriceList, User } from '#shared/types';
 import {
   TARGET_FIELD_DEFS,
   FIELD_GROUP_LABELS,
@@ -14,6 +14,7 @@ const props = defineProps<{
   csvHeaders: string[];
   channels: Channel[];
   priceLists: ProductPriceList[];
+  users: User[];
   canProceed: boolean;
   columnExamples: Record<string, ColumnExample>;
   loading?: boolean;
@@ -155,6 +156,38 @@ const csvHeaderOptions = computed(() =>
           </div>
         </div>
       </Card>
+      <!-- Sales rep mapping -->
+      <Card v-if="importConfig.salesRepMappings.length > 0" class="p-6">
+        <h3 class="mb-4 text-lg font-semibold">
+          {{ t('customers.import_salesrep_mapping') }}
+        </h3>
+        <p class="text-muted-foreground mb-4 text-sm">
+          {{ t('customers.import_salesrep_mapping_description') }}
+        </p>
+        <div class="space-y-3">
+          <div
+            v-for="mapping in importConfig.salesRepMappings"
+            :key="mapping.csvName"
+            class="flex items-center gap-4"
+          >
+            <Badge variant="outline" class="min-w-[100px] justify-center">
+              {{ mapping.csvName }}
+            </Badge>
+            <LucideArrowRight class="text-muted-foreground size-4" />
+            <NativeSelect v-model="mapping.userId" class="flex-1">
+              <option value="">{{ t('customers.import_no_salesrep') }}</option>
+              <option
+                v-for="user in users"
+                :key="user._id"
+                :value="user._id"
+              >
+                {{ user.name }}
+              </option>
+            </NativeSelect>
+          </div>
+        </div>
+      </Card>
+
       <!-- Duplicate handling -->
       <Card class="p-6">
         <h3 class="mb-2 text-lg font-semibold">
