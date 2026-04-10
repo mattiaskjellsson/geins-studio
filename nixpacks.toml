@@ -6,7 +6,7 @@ cmds = [
   'npm install -g corepack@latest',
   'corepack enable',
   'corepack prepare pnpm@10.29.3 --activate',
-  'pnpm install --ignore-scripts'
+  'pnpm install --frozen-lockfile --ignore-scripts'
 ]
 
 [phases.build]
