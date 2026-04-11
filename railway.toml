@@ -9,7 +9,7 @@ BASE_URL = "${{BASE_URL}}"
 GEINS_DEBUG = "${{GEINS_DEBUG}}"
 
 [deploy]
-startCommand = "node .output/server/index.mjs"
+startCommand = "node server/index.mjs"
 healthcheckPath = "/"
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 3
